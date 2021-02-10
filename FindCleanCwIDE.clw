@@ -45,14 +45,14 @@ FindCleanCwWindow   PROCEDURE()
 CleanClaPropXmlFile PROCEDURE(STRING ClaPropFullName, BYTE pQuery, *ClnStatsType ClnStats, *STRING OutMsg ),BOOL
 CleanXmlFindPattern PROCEDURE(CbFindCleanClass FindCln, STRING ltPatternsElement, BYTE pQuery, *IOStatsType IOStats, *STRING OutMsg ),BOOL
 CleanViewPatterns   PROCEDURE(STRING ClaPropFullName, STRING ltPatternsElement) 
-CleanViewSelectFile PROCEDURE()  !FileDialog to Pick the file to view
+CleanViewSelectFile PROCEDURE(<STRING pOpenFileName>)  !FileDialog to Pick the file to view
 
 DB                  PROCEDURE(STRING OutDebugMessage) 
 DBClear             PROCEDURE() 
 ExplorerOpen        PROCEDURE(STRING FolderName)
 NotepadOpen         PROCEDURE(STRING FileName)
 GetRegistryInstallsOfCW  PROCEDURE(QUEUE ClarionQ, *STRING ClaQ_RootPath, <*STRING ClaQ_ClarionName>, <*DECIMAL ClaQ_VersioNo>)
-GetFileDateTimeSize PROCEDURE(STRING inFileName,<*LONG outDate>,<*LONG outTime>,<*LONG outSize>),BOOL
+GetFileDateTimeSize PROCEDURE(STRING inFileName,<*LONG outDate>,<*LONG outTime>,<*LONG outSize>,<*STRING outStamp>),BOOL
 GetSpecialFolder    PROCEDURE(LONG CDSL),STRING 
 ListHeaderColor     PROCEDURE(LONG ListFEQ)
 SetAboutText        PROCEDURE(LONG AboutFEQ) 
@@ -144,7 +144,7 @@ NoShowAbout BYTE
 WriteOK     BYTE      
 IDEClosed   BYTE      
 Window WINDOW('Clarion IDE Find Patterns Clean / Shrink in ClarionProperties.xml'),AT(,,476,203),GRAY,IMM,SYSTEM, |
-            ICON(ICON:Clarion),FONT('Segoe UI',10,,FONT:regular),RESIZE
+            ICON('FindCln.ico'),FONT('Segoe UI',10,,FONT:regular),RESIZE
         SHEET,AT(3,3,470,197),USE(?Sheet1)
             TAB(' ClarionProperties.Xml '),USE(?TAB:Clean)
                 BOX,AT(9,17,457,10),USE(?Box_Clean),FILL(COLOR:INACTIVECAPTION),LINEWIDTH(1)
@@ -251,6 +251,7 @@ LoadBinSettngQueue  PROCEDURE()                 !Load installs in Registry \Bin\
 LoadConfigDirTxt    PROCEDURE(BOOL ParseOnly=0) !Load ConfigDir.Txt with /ConfigDir=xxx paths
 LoadCleanQueue      PROCEDURE()                 !Load 1 Q of files to process from AppData and Cw Installs and ConfigDir
 LoadCleanQFrom1Q    PROCEDURE(AppDataSvQ Add1Q, STRING FromQName, BYTE From123 )  !Load Add1Q into CleanQ
+CleanListPopup      PROCEDURE()                 !Rt Mouse Popup for Clean List
 CleanTheFiles       PROCEDURE(BYTE pQuery)      !Scan CleanQ files and Shrink
 CopyCleanQ2Clip     PROCEDURE()
 ValidateParms       PROCEDURE()                 !Check Min/Max and maybe other are good
@@ -364,22 +365,7 @@ WinResize WindowResizeType
            OF EVENT:NewSelection
               CASE KEYCODE()
               OF MouseLeft2 ; ExplorerOpen(CleanQ.PathBS)
-              OF MouseRight  
-                     SETKEYCODE(0)
-                     EXECUTE POPUP('Explore Folder	Double Click' & |  !#1            
-                                 '|Open XML in Notepad'   & |  !#2
-                          '|-' & '|View Find Patterns'    & |  !#3
-                                 '|View Replace Patterns' & |  !#4
-                                 '|Select a File to View Patterns' & |  !#5
-                          '|-' & '|Delete Row	Delete'   )    !#6
-                      
-                       ExplorerOpen(CleanQ.PathBS)  ! #1
-                       NotepadOpen(CleanQ.PathBS & ClarionProperties_xml)
-                       START(CleanViewPatterns,,CleanQ.PathBS & ClarionProperties_xml,ltFindPatterns)
-                       START(CleanViewPatterns,,CleanQ.PathBS & ClarionProperties_xml,ltReplacePatterns)
-                       CleanViewSelectFile()
-                       DELETE(CleanQ)               ! # 6  Delete Row`Delete
-                     END !EXECUTE Popup                 
+              OF MouseRight ; DOO.CleanListPopup()                
               END
            END
                        
@@ -643,6 +629,52 @@ QNdx    LONG,AUTO
     END
     RETURN 
 !================================================================
+DOO.CleanListPopup PROCEDURE() !Rt Mouse Popup for Clean List
+ 
+RowFileName CSTRING(261)
+B4_FileName CSTRING(261),DIM(4) 
+B4_Stamp    PSTRING(32),DIM(4)
+B4_Tilde    PSTRING(2),DIM(4)
+DateStamp   STRING(32)
+X   USHORT
+    CODE
+    SETKEYCODE(0)
+    RowFileName = CleanQ.PathBS & ClarionProperties_xml
+    LOOP X=1 TO 4
+        B4_FileName[X]=RowFileName & CHOOSE(X,'.b4clean','.b4clean2','.b4cleanMax','.old')
+        IF ~GetFileDateTimeSize(B4_FileName[X],,,,DateStamp) THEN 
+           B4_Tilde[X]='~'
+        ELSE
+           B4_Stamp[X]='<9>(' & CLIP(DateStamp) &')' 
+        END  
+    END
+    EXECUTE POPUP('Explore Folder	Double Click' & |  !#1
+                '|Open XML in Notepad'   & |  !#2
+          '|-'& '|View Find Patterns'    & |  !#3
+                '|View Replace Patterns' & |  !#4
+                '|View Patterns in Other File' & |  !SubMenu
+                 '{{' & |
+                      B4_Tilde[1] &'.B4 Clean  Backup' & B4_Stamp[1] & |  !#5
+                 '|'& B4_Tilde[2] &'.B4 Clean2 Backup' & B4_Stamp[2] & |  !#6
+                 '|'& B4_Tilde[3] &'.B4 CleanMax Save' & B4_Stamp[3] & |  !#7
+                 '|'& B4_Tilde[4] &'.Xml.Old IDE Copy' & B4_Stamp[4] & |  !#8
+           '|-'& '|Select File to View Patterns ...' & |  !#9
+                 '}' & |
+          '|-'& '|Delete Row	Delete'   )    !#10
+     
+      ExplorerOpen(CleanQ.PathBS)  ! #1
+      NotepadOpen(CleanQ.PathBS & ClarionProperties_xml)
+      START(CleanViewPatterns,,RowFileName,ltFindPatterns)
+      START(CleanViewPatterns,,RowFileName,ltReplacePatterns)
+      CleanViewSelectFile(B4_FileName[1])  !#5
+      CleanViewSelectFile(B4_FileName[2])
+      CleanViewSelectFile(B4_FileName[3])
+      CleanViewSelectFile(B4_FileName[4])
+      CleanViewSelectFile()
+      DELETE(CleanQ)               ! # 9  Delete Row`Delete
+    END !EXECUTE Popup 
+    RETURN      
+!================================================================
 DOO.CleanTheFiles  PROCEDURE(BYTE pQuery)   !Scan CleanQ files and Shrink
 QNdx    LONG,AUTO
 ClnStats   GROUP(ClnStatsType).  
@@ -789,9 +821,11 @@ CleanClaPropXmlFile Procedure(STRING pClaPropXmlFN, BYTE pQuery, *ClnStatsType C
 DidSaveOk   BOOL
 FindCln     CbFindCleanClass
 CleanCnt    LONG
-B4CleanName STRING(260)
+B4CleanName CSTRING(261)
+B4CleanMax  CSTRING(261)  !02/10/21 Keep the First Clean assume Maximi
     CODE
     B4CleanName=CLIP(pClaPropXmlFN) & '.b4clean'
+    B4CleanMax =CLIP(pClaPropXmlFN) & '.b4cleanMax'
     CLEAR(ClnStats)
     OutMsg=''
     IF ~FindCln.FileLoad(pClaPropXmlFN,CHOOSE(pQuery OR Glo:TestShrink) ) THEN
@@ -822,7 +856,12 @@ B4CleanName STRING(260)
     END
 
     !--- This is NOT a Test...so WRITE to real ClaProps.XML --------
-    COPY(B4CleanName,CLIP(B4CleanName) &'2')   !Save 2nd backup .b4clean2 
+    IF ~EXISTS(B4CleanMax) THEN         !02/10/21 No Max file? Keep First Clean as Max
+        COPY(pClaPropXmlFN   ,B4CleanMax)    !Save current file 
+        COPY(B4CleanName     ,B4CleanMax)    !I did this late so if there's a prior Clean
+        COPY(B4CleanName &'2',B4CleanMax)    !or 2 prior cleans
+    END
+    COPY(B4CleanName,B4CleanName &'2')   !Save 2nd backup .b4clean2 
     COPY(pClaPropXmlFN,B4CleanName)            !Save .b4clean backup with Copy
     IF ERRORCODE() THEN                        !Cannot Backup file?
        OutMsg='Error Copy .b4clean: ' & ErrorCode() &' '& Error()
@@ -872,17 +911,20 @@ Pos2        LONG
     END
     RETURN RetBool
 !=================================================================================== 
-CleanViewSelectFile PROCEDURE()  !FileDialog to Pick the file to view
+CleanViewSelectFile PROCEDURE(<STRING pOpenFileName>)  !FileDialog to Pick the file to view
 OpenFN  STRING(260)
-    CODE  
-    IF ~FileDialog('View Find Patterns '& ClarionProperties_xml & ' File', |
+    CODE
+    IF ~OMITTED(pOpenFileName) THEN 
+        OpenFN = pOpenFileName      
+    ELSIF ~FileDialog('View Find Patterns '& ClarionProperties_xml & ' File', |
                     OpenFN, |
-                    'Cla Props XML|Cla*.XML;Cla*.b4clean?' & |
-                    '|B4Clean Backups|Cla*.b4clean?' & |
+                    'Cla Props XML|Cla*.XML;Cla*.b4clean*' & |
+                    '|B4Clean Backups|Cla*.b4clean*' & |
                     '|TestShrink|*.TestShrink' & |
                     '|XML Files|*.XML|All Files|*.*', |
-                    FILE:LongName + FILE:KeepDir) THEN RETURN.
-                        
+                    FILE:LongName + FILE:KeepDir) THEN 
+            RETURN
+    END                       
     IF START(CleanViewPatterns,,OpenFN,ltFindPatterns).
     START(CleanViewPatterns,,OpenFN,ltReplacePatterns) 
     RETURN 
@@ -901,15 +943,17 @@ CountQ  QUEUE(FindQ),PRE(CntQ)
         END 
 AlphaQ  QUEUE(FindQ),PRE(AlpQ)  !Counts in Alpha Order
         END 
+TotalCnt   LONG    
 Unique1Cnt LONG    
 Unique3Cnt LONG   
 
-Window WINDOW('Find Patterns'),AT(,,310,220),GRAY,SYSTEM,MAX,FONT('Segoe UI',10),RESIZE,ICON(ICON:Clarion)
+Window WINDOW('Find Patterns'),AT(,,310,220),GRAY,SYSTEM,MAX,ICON('FindCln.ico'),FONT('Segoe UI',10),RESIZE
         ENTRY(@s255),AT(3,2,,10),FULL,USE(?XmlFN),SKIP,TRN,READONLY
-        STRING(@n6),AT(121,15,30),USE(Unique1Cnt),TRN,RIGHT
-        STRING(@n6),AT(121,24,30),USE(Unique3Cnt),TRN,RIGHT
-        STRING('Unique Strings'),AT(155,15),USE(?Unique1:pmt),TRN
-        STRING('Unique Count >= 3'),AT(155,24),USE(?Unique3:pmt),TRN
+        STRING(@n6),AT(126,19,30),USE(TotalCnt),TRN,RIGHT,FONT(,12,,FONT:bold)
+        STRING(@n6),AT(161,15,30),USE(Unique1Cnt),TRN,RIGHT
+        STRING(@n6),AT(161,24,30),USE(Unique3Cnt),TRN,RIGHT
+        STRING('Unique Strings'),AT(194,15),USE(?Unique1:pmt),TRN
+        STRING('Unique Count >= 3'),AT(194,24),USE(?Unique3:pmt),TRN
         SHEET,AT(1,17),FULL,USE(?SHEET1)
             TAB(' MRU '),USE(?TAB:Mru),TIP('Most Recently Used')
                 LIST,AT(1,36),FULL,USE(?LIST:FindQ),VSCROLL,VCR,FROM(FindQ),FORMAT('28L(2)|FM~MRU~C(0)@n6@28L(2)|FM~Coun' & |
@@ -954,8 +998,8 @@ PrvCls  CBWndPreviewClass
     DDD.ListInit(?LIST:AlphaQ)
     DDD.ListInit(?LIST:CountQ)
     ?SHEET1{PROP:NoSheet}=1
-    ?SHEET1{PROP:Below}=1   
-    0{PROP:Text}=ltPatternsElement &' Patterns>  '& RECORDS(FindQ) &' Strings'
+    ?SHEET1{PROP:Below}=1
+    0{PROP:Text}=ltPatternsElement &' Patterns>  '& TotalCnt &' Strings'
     ACCEPT 
         CASE EVENT()
         OF Event:AlertKey 
@@ -1021,6 +1065,7 @@ QX  LONG
         PUT(FindQ)
     END
 
+    TotalCnt = RECORDS(FindQ)
     Unique1Cnt = RECORDS(CountQ)
     LOOP QX=RECORDS(CountQ) TO 1 BY -1   !Just Keep Counts 2 +
         GET(CountQ,QX)
@@ -1136,7 +1181,7 @@ NotepadEXE  CSTRING(300),AUTO
     END
     RETURN     
 !=====================================
-GetFileDateTimeSize PROCEDURE(STRING pFileName,<*LONG outDate>,<*LONG outTime>,<*LONG outSize>)!,BOOL
+GetFileDateTimeSize PROCEDURE(STRING pFileName,<*LONG outDate>,<*LONG outTime>,<*LONG outSize>,<*STRING outStamp>)!,BOOL
 DirQ    QUEUE(FILE:Queue),PRE(DirQ)
         END ! DirQ:Name  DirQ:ShortName  DirQ:Date  DirQ:Time  DirQ:Size  DirQ:Attrib 
 RetBool BOOL        
@@ -1151,6 +1196,10 @@ RetBool BOOL
     IF ~OMITTED(outDate) THEN outDate=DirQ:Date.
     IF ~OMITTED(outTime) THEN outTime=DirQ:Time.
     IF ~OMITTED(outSize) THEN outSize=DirQ:Size.
+    IF ~OMITTED(outStamp) THEN 
+        outStamp=CHOOSE(~RetBool,'',LEFT(FORMAT(DirQ:Date,@d17))&' '& |
+                                         FORMAT(DirQ:Time,@t1)  &'  '& |
+                                    LEFT(FORMAT(DirQ:Size,@n11)) ) .
     RETURN RetBool
 !==============================================
 GetSpecialFolder    PROCEDURE(LONG CDSL)
